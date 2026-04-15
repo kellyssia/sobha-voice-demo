@@ -1748,5 +1748,176 @@ document.querySelectorAll('.sidebar-item').forEach(function(item) {
 
 <div class="agent-label" id="agentLabel">💬 Your Sobha concierge is ready</div>
 
+
+<!-- Voice Input Button -->
+<style>
+  #voiceFab {
+    position: fixed;
+    bottom: 90px;
+    right: 24px;
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    background: #B8965A;
+    border: none;
+    cursor: pointer;
+    z-index: 999999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+    transition: all 0.2s;
+  }
+  #voiceFab:hover { background: #D4AF78; transform: scale(1.05); }
+  #voiceFab.listening {
+    background: #E74C3C;
+    animation: pulse 1s infinite;
+  }
+  @keyframes pulse {
+    0%,100% { box-shadow: 0 4px 16px rgba(231,76,60,0.4); }
+    50% { box-shadow: 0 4px 28px rgba(231,76,60,0.8); }
+  }
+  #voiceTooltip {
+    position: fixed;
+    bottom: 150px;
+    right: 24px;
+    background: rgba(20,20,20,0.95);
+    border: 1px solid rgba(184,150,90,0.3);
+    color: #E8E0D4;
+    padding: 8px 14px;
+    font-size: 12px;
+    font-family: 'DM Sans', sans-serif;
+    z-index: 999999;
+    white-space: nowrap;
+    opacity: 0;
+    transition: opacity 0.3s;
+    pointer-events: none;
+  }
+  #voiceTooltip.show { opacity: 1; }
+</style>
+
+<button id="voiceFab" title="Speak to your Sobha concierge">🎤</button>
+<div id="voiceTooltip"></div>
+
+<script>
+(function() {
+  var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  var fab = document.getElementById('voiceFab');
+  var tooltip = document.getElementById('voiceTooltip');
+  var listening = false;
+
+  if (!SpeechRecognition) {
+    fab.title = 'Voice not supported — use Chrome';
+    fab.style.opacity = '0.4';
+    fab.style.cursor = 'not-allowed';
+    return;
+  }
+
+  var recognition = new SpeechRecognition();
+  recognition.lang = 'en-US';
+  recognition.continuous = false;
+  recognition.interimResults = false;
+
+  function showTooltip(msg, duration) {
+    tooltip.textContent = msg;
+    tooltip.classList.add('show');
+    if (duration) {
+      setTimeout(function() { tooltip.classList.remove('show'); }, duration);
+    }
+  }
+
+  fab.addEventListener('click', function() {
+    if (listening) {
+      recognition.stop();
+      return;
+    }
+    // Open chat widget if not already open
+    var chatBtn = document.querySelector('.embeddedServiceHelpButton button, [class*="helpButton"] button, [class*="fab"] button');
+    if (chatBtn) chatBtn.click();
+    setTimeout(function() {
+      try { recognition.start(); } catch(e) {}
+    }, 500);
+  });
+
+  recognition.onstart = function() {
+    listening = true;
+    fab.classList.add('listening');
+    fab.innerHTML = '🔴';
+    showTooltip('Listening...');
+  };
+
+  recognition.onresult = function(e) {
+    var text = e.results[0][0].transcript;
+    fab.innerHTML = '⏳';
+    showTooltip('"' + text + '"', 3000);
+
+    // Method 1: Try Embedded Messaging API
+    if (window.embeddedservice_bootstrap && window.embeddedservice_bootstrap.utilAPI) {
+      try {
+        window.embeddedservice_bootstrap.utilAPI.sendTextMessage(text);
+        return;
+      } catch(err) {}
+    }
+
+    // Method 2: Try to find and fill chat input
+    var selectors = [
+      'input[placeholder*="message" i]',
+      'input[placeholder*="type" i]',
+      'textarea[placeholder*="message" i]',
+      'textarea[placeholder*="type" i]',
+      '[contenteditable="true"]',
+      '.chasitorText',
+      '[data-testid*="input"]',
+      '[aria-label*="message" i]',
+      '[aria-label*="type" i]'
+    ];
+
+    var found = false;
+    for (var i = 0; i < selectors.length; i++) {
+      var el = document.querySelector(selectors[i]);
+      if (el && el.offsetParent !== null) {
+        el.focus();
+        el.value = text;
+        ['input','change','keyup','keydown'].forEach(function(ev) {
+          el.dispatchEvent(new Event(ev, {bubbles:true}));
+        });
+        // Try pressing Enter to send
+        setTimeout(function() {
+          el.dispatchEvent(new KeyboardEvent('keypress', {key:'Enter',keyCode:13,bubbles:true}));
+          el.dispatchEvent(new KeyboardEvent('keydown', {key:'Enter',keyCode:13,bubbles:true}));
+          var sendBtn = document.querySelector('[title*="Send" i], [aria-label*="Send" i], [class*="send" i] button');
+          if (sendBtn) sendBtn.click();
+        }, 200);
+        found = true;
+        break;
+      }
+    }
+
+    if (!found) {
+      showTooltip('Open the chat first, then speak', 3000);
+    }
+  };
+
+  recognition.onend = function() {
+    listening = false;
+    fab.classList.remove('listening');
+    fab.innerHTML = '🎤';
+  };
+
+  recognition.onerror = function(e) {
+    listening = false;
+    fab.classList.remove('listening');
+    fab.innerHTML = '🎤';
+    if (e.error === 'not-allowed') {
+      showTooltip('Microphone access denied', 3000);
+    } else {
+      showTooltip('Error: ' + e.error, 3000);
+    }
+  };
+
+})();
+</script>
+
 </body>
 </html>
