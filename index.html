@@ -1919,5 +1919,147 @@ document.querySelectorAll('.sidebar-item').forEach(function(item) {
 })();
 </script>
 
+
+<!-- Text to Speech — Agent Voice Output -->
+<script>
+(function() {
+  var synth = window.speechSynthesis;
+  if (!synth) return;
+
+  var lastSpoken = '';
+  var voiceReady = false;
+  var selectedVoice = null;
+
+  // Pick best voice — prefer female en-US
+  function loadVoice() {
+    var voices = synth.getVoices();
+    var preferred = ['Samantha','Karen','Victoria','Moira','Fiona','Google US English','Microsoft Zira'];
+    for (var p = 0; p < preferred.length; p++) {
+      for (var v = 0; v < voices.length; v++) {
+        if (voices[v].name.indexOf(preferred[p]) > -1) {
+          selectedVoice = voices[v];
+          voiceReady = true;
+          return;
+        }
+      }
+    }
+    // Fallback — any en-US female
+    for (var v = 0; v < voices.length; v++) {
+      if (voices[v].lang === 'en-US') {
+        selectedVoice = voices[v];
+        voiceReady = true;
+        return;
+      }
+    }
+    if (voices.length > 0) {
+      selectedVoice = voices[0];
+      voiceReady = true;
+    }
+  }
+
+  loadVoice();
+  if (synth.onvoiceschanged !== undefined) {
+    synth.onvoiceschanged = loadVoice;
+  }
+
+  function speak(text) {
+    if (!text || text === lastSpoken) return;
+    // Strip markdown formatting
+    text = text.replace(/\*\*(.*?)\*\*/g, '$1')
+               .replace(/\*(.*?)\*/g, '$1')
+               .replace(/#{1,6}\s/g, '')
+               .replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1')
+               .replace(/•/g, '')
+               .trim();
+    if (!text) return;
+    lastSpoken = text;
+    synth.cancel();
+    var utt = new SpeechSynthesisUtterance(text);
+    if (selectedVoice) utt.voice = selectedVoice;
+    utt.rate = 0.95;
+    utt.pitch = 1.05;
+    utt.volume = 1;
+    synth.speak(utt);
+  }
+
+  // Watch for new agent messages in the chat widget
+  function watchForAgentMessages() {
+    var observer = new MutationObserver(function(mutations) {
+      mutations.forEach(function(mutation) {
+        mutation.addedNodes.forEach(function(node) {
+          if (node.nodeType !== 1) return;
+
+          // Look for agent message elements
+          var agentSelectors = [
+            '[class*="agent" i] [class*="message" i]',
+            '[class*="bot" i] [class*="text" i]',
+            '[class*="inbound" i] [class*="text" i]',
+            '[class*="message-bubble" i]',
+            '[class*="chatMessage" i]',
+            '[data-testid*="message" i]'
+          ];
+
+          agentSelectors.forEach(function(sel) {
+            var els = node.querySelectorAll ? node.querySelectorAll(sel) : [];
+            els.forEach(function(el) {
+              var txt = el.innerText || el.textContent;
+              if (txt && txt.length > 3 && txt !== lastSpoken) {
+                setTimeout(function() { speak(txt); }, 300);
+              }
+            });
+            // Also check the node itself
+            if (node.matches && node.matches(sel)) {
+              var txt = node.innerText || node.textContent;
+              if (txt && txt.length > 3) {
+                setTimeout(function() { speak(txt); }, 300);
+              }
+            }
+          });
+        });
+      });
+    });
+
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true
+    });
+  }
+
+  watchForAgentMessages();
+
+  // Also poll for new messages as fallback
+  var lastMessageCount = 0;
+  setInterval(function() {
+    var allSelectors = [
+      '[class*="message"]',
+      '[class*="chatMessage"]',
+      '[class*="bubble"]'
+    ];
+    allSelectors.forEach(function(sel) {
+      var msgs = document.querySelectorAll(sel);
+      if (msgs.length > lastMessageCount) {
+        lastMessageCount = msgs.length;
+        var last = msgs[msgs.length - 1];
+        if (last) {
+          var txt = last.innerText || last.textContent;
+          // Only speak if it looks like an agent response (not user input)
+          if (txt && txt.length > 10 && txt !== lastSpoken) {
+            // Check if it's not the user's own message
+            var isUser = last.closest('[class*="outbound" i], [class*="user" i], [class*="customer" i]');
+            if (!isUser) {
+              setTimeout(function() { speak(txt); }, 400);
+            }
+          }
+        }
+      }
+    });
+  }, 1000);
+
+  // Expose globally so it can be triggered manually
+  window.sobhaSpeak = speak;
+
+})();
+</script>
+
 </body>
 </html>
